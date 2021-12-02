@@ -1,6 +1,5 @@
-from PyQt5.QtWidgets import QFileDialog, QLabel
-from PyQt5.QtCore import Qt, QObject
-from PyQt5 import QtWidgets as qtw
+from PyQt5.QtWidgets import QFileDialog, QLabel, QWidget, QPushButton, QVBoxLayout, QLineEdit, QTabWidget, QListView
+from PyQt5.QtCore import QObject
 from PyQt5 import QtCore as qtc
 from PyQt5 import QtGui as gui
 
@@ -9,6 +8,7 @@ import os, shutil
 from epub import parsXML, parsHTML
 import uuid
 from PIL import Image
+from pdf import imgs_fr_pdf
 
 import resources.imgs_resr
 
@@ -92,7 +92,7 @@ class Communicate(QObject):
     reading_ex = qtc.pyqtSignal()
 
 
-class App_Ui(qtw.QWidget):
+class App_Ui(QWidget):
     c = Communicate()
     thread1 = None
     thread2 = None
@@ -113,15 +113,15 @@ class App_Ui(qtw.QWidget):
 
         self.setObjectName('Main')
         self.setFixedSize(600, 300)
-        self.setWindowTitle('EBook Images v1.1')
+        self.setWindowTitle('EBook Images v1.5')
         self.setWindowIcon(gui.QIcon(":imgs/ebi_icon.png"))
 
-        self.FilePathLineEdit = qtw.QLineEdit(self)
+        self.FilePathLineEdit = QLineEdit(self)
         self.FilePathLineEdit.setObjectName("FPLineEdit")
         self.FilePathLineEdit.setReadOnly(True)
         self.FilePathLineEdit.setGeometry(qtc.QRect(30, 40, 410, 25))
 
-        self.ChooseFileBtn = qtw.QPushButton(self)
+        self.ChooseFileBtn = QPushButton(self)
         self.ChooseFileBtn.setGeometry(qtc.QRect(460, 40, 100, 25))
         self.ChooseFileBtn.setObjectName("ChooseFileBtn")
         self.ChooseFileBtn.setText('Choose File')
@@ -138,13 +138,16 @@ class App_Ui(qtw.QWidget):
         self.show()
 
     def on_choose_file_clicked(self):
-        inputfile_path = QFileDialog.getOpenFileName(self, 'Choose File', '/', "Epub (*.epub);;All Files (*)")
+        inputfile_path = QFileDialog.getOpenFileName(self, 'Choose File', '/',
+                                                     "Epub (*.epub);;Pdf (*.pdf);;All Files (*)")
 
         if inputfile_path[0] == "":
             self.tabs.scrollLabel('No file selected')
-        if inputfile_path[0] != "" and not inputfile_path[0].__contains__('.epub'):
+        elif (inputfile_path[0] != "" and not inputfile_path[0].__contains__('.epub')) and (
+                inputfile_path[0] != "" and not inputfile_path[0].__contains__('.pdf')):
+
             self.tabs.scrollLabel('The file ' + inputfile_path[0] + ' can not be processed')
-        if inputfile_path[0] != "" and inputfile_path[0].__contains__('.epub'):
+        else:
             try:
                 self.worker = Worker(self, inputfile_path[0])
 
@@ -161,26 +164,29 @@ class App_Ui(qtw.QWidget):
                 self.tabs.scrollLabel(str(e))
 
     def extract_epub_worker(self, path):
+        if path.__contains__('.epub'):
+            with ZipFile(path, 'r') as zip:
+                zip.extractall(path=self.__working_dir)
 
-        with ZipFile(path, 'r') as zip:
-            zip.extractall(path=self.__working_dir)
-
-            # uncompress_size = sum((file.file_size for file in zip.infolist()))
-            #
-            # extracted_size = 0
-            #
-            # for file in zip.infolist():
-            #     extracted_size += file.file_size
-            # print(int(extracted_size * 100 / uncompress_size))
-            # zip.extract(file)
+                # uncompress_size = sum((file.file_size for file in zip.infolist()))
+                #
+                # extracted_size = 0
+                #
+                # for file in zip.infolist():
+                #     extracted_size += file.file_size
+                # print(int(extracted_size * 100 / uncompress_size))
+                # zip.extract(file)
+        if path.__contains__('.pdf'):
+            self.__book_tile = imgs_fr_pdf.getPdfBookTitle(path)
+            self.__all_imgs = imgs_fr_pdf.ext_pdf_imgs(self.__working_dir, path)
 
         self.c.loading_screen.emit(0)
 
     def save_images(self, key):
 
         try:
-            name = qtw.QFileDialog.getSaveFileName(self, 'Save Folder', self.__book_tile.upper() + " " + key.title(),
-                                                   "Audio Files (*.)")
+            name = QFileDialog.getSaveFileName(self, 'Save Folder', self.__book_tile.upper() + " " + key.title(),
+                                               "Audio Files (*.)")
             if not name[0] == "" and not os.path.exists(name[0]):
                 os.mkdir(name[0])
 
@@ -192,8 +198,6 @@ class App_Ui(qtw.QWidget):
                 self.thread3.finished.connect(self.thread3.deleteLater)
                 self.thread3.start()
 
-
-
         except Exception as e:
             print(str(e))
 
@@ -201,22 +205,26 @@ class App_Ui(qtw.QWidget):
         self.tabs.scrollLabel('Done')
 
         if os.path.isfile(self.__working_dir + '/META-INF/container.xml'):
+
             cont_path = parsXML.get_content_file_path(self.__working_dir + '/META-INF/container.xml')
             root_cont_xml = parsXML.content_file_prep(cont_path)
             self.__book_tile = parsXML.getbooktitle(root_cont_xml)
             self.__all_imgs = pics_paths = parsXML.get_image_paths(self.__working_dir, root_cont_xml)
             pics_paths_len = len(pics_paths)
-            self.tabs.scrollLabel('There are ' + str(pics_paths_len) + ' image(s) find')
+            self.tabs.scrollLabel('There are ' + str(pics_paths_len) + ' image(s) found')
             if pics_paths_len > 0:
                 self.tabs.make_chrs_btn_list("All Images")
                 chrs_page_path = parsXML.getchapters_page_path(root_cont_xml)
-                self.__chaptrs_wid_imgs = parsHTML.chrs_containing_images_dict(self.__working_dir + '/OEBPS/',
+                self.__chaptrs_wid_imgs = parsHTML.chrs_containing_images_dict(self.__working_dir + "/",
                                                                                chrs_page_path)
                 for k in self.__chaptrs_wid_imgs:
                     self.tabs.make_chrs_btn_list(k)
                     self.tabs.scrollLabel(k)
                     for v in self.__chaptrs_wid_imgs[k]:
                         self.tabs.scrollLabel("   " + v)
+        else:
+            self.tabs.scrollLabel('There are ' + str(len(self.__all_imgs)) + ' image(s) found')
+            self.tabs.make_chrs_btn_list('All Images')
 
     def save_imgs(self, key, name):
         self.c.loading_screen.emit(1)
@@ -233,6 +241,7 @@ class App_Ui(qtw.QWidget):
                 temp_t = key.replace(" ", "_")
                 image.save(name + "/" + temp_t + "_" + str(str(uuid.uuid4())[:6]) + file_ext,
                            quality=90)
+
         self.c.loading_screen.emit(0)
         os.startfile(name)
 
@@ -272,25 +281,25 @@ class App_Ui(qtw.QWidget):
         self.thread2.start()
 
 
-class theTabs(qtw.QWidget):
+class theTabs(QWidget):
 
     def __init__(self, parent):
-        super(qtw.QWidget, self).__init__(parent)
+        super(QWidget, self).__init__(parent)
         self.resize(500, 220)
         self.move(20, 80)
-        self.layout = qtw.QVBoxLayout(self)
+        self.layout = QVBoxLayout(self)
 
-        self.tabs = qtw.QTabWidget()
-        self.tab1 = qtw.QWidget()
-        self.tab2 = qtw.QWidget()
+        self.tabs = QTabWidget()
+        self.tab1 = QWidget()
+        self.tab2 = QWidget()
 
         self.tabs.addTab(self.tab1, " Logs")
         self.tabs.addTab(self.tab2, "Save Images")
 
-        self.logListView = qtw.QListView()
+        self.logListView = QListView()
         self.logListView.setObjectName("LogLV")
 
-        self.tab1.layout = qtw.QVBoxLayout(self)
+        self.tab1.layout = QVBoxLayout(self)
         self.tab1.layout.setContentsMargins(0, 0, 0, 0)
         self.tab1.layout.addWidget(self.logListView)
         self.tab1.setLayout(self.tab1.layout)
@@ -298,9 +307,9 @@ class theTabs(qtw.QWidget):
         self.logModel = gui.QStandardItemModel(self.logListView)
         self.logListView.setModel(self.logModel)
 
-        self.listView = qtw.QListView()
+        self.listView = QListView()
 
-        self.tab2.layout = qtw.QVBoxLayout(self)
+        self.tab2.layout = QVBoxLayout(self)
         self.tab2.layout.setContentsMargins(0, 0, 0, 0)
         self.tab2.layout.addWidget(self.listView)
         self.tab2.setLayout(self.tab2.layout)
@@ -326,7 +335,7 @@ class theTabs(qtw.QWidget):
         cw.clicked.connect(cw.get_title)
 
 
-class CustomListItem(qtw.QPushButton):
+class CustomListItem(QPushButton):
 
     def __init__(self, parent=None):
         super(CustomListItem, self).__init__(parent)
@@ -337,7 +346,7 @@ class CustomListItem(qtw.QPushButton):
         App_Ui.c.sg.emit(n)
 
 
-class Loading(qtw.QWidget):
+class Loading(QWidget):
 
     def __init__(self, parent=None):
         super(Loading, self).__init__(parent)
