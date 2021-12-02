@@ -21,11 +21,17 @@ def content_file_prep(content_opf_path):
     with open(content_opf_path) as cont:
         opf = cont.read()
 
-        for i in range(len(CONTENT_REGEX)):
-            rex = re.findall(CONTENT_REGEX[i], opf)
-            opf = opf.replace("".join(rex), "")
+        # for i in range(len(CONTENT_REGEX)):
+        #     rex = re.findall(CONTENT_REGEX[i], opf)
+        #     opf = opf.replace("".join(rex), "")
 
-    root = etree.fromstring(opf)
+    utf8_parser = etree.XMLParser(encoding='utf-8')
+    root = etree.fromstring(opf.encode('utf-8'), parser=utf8_parser)
+    comments = root.xpath('//comment()')
+    for c in comments:
+        p = c.getparent()
+        p.remove(c)
+
     for elem in root.getiterator():
         elem.tag = etree.QName(elem).localname
 
@@ -64,10 +70,21 @@ def get_image_paths(wrking_dir, root):
 
 
 def getchapters_page_path(root):
+    chp = None
     for g in root.iter('reference'):
 
         if g.get('type') == 'toc':
-            return g.get('href')
+            chp = g.get('href')
+
+    if chp == None:
+        count = int(root.xpath('count(/package[@version="2.0"]/manifest//item)'))
+        for i in range(0, count):
+            chpi = root.xpath('/package[@version="2.0"]/manifest//item/@media-type')[i]
+            if chpi.__contains__("application/x-dtbncx+xml"):
+                chp = root.xpath('/package/manifest/item/@href')[i]
+                break
+
+    return chp
 
 
 def give_full_path(wrking_dir):
